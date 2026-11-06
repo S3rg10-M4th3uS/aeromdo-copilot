@@ -1,0 +1,564 @@
+{
+  "build_time_seconds": 316.09,
+  "database_summary": {
+    "total_evaluations": 49500,
+    "feasible_evaluations": 24946,
+    "by_architecture": {
+      "biplane": 39066,
+      "monoplane": 10434
+    },
+    "by_solver": {
+      "LLT": 42927,
+      "AVL": 6573
+    },
+    "by_optimizer": {
+      "PSO": 38658,
+      "PatternSearch": 10842
+    },
+    "total_doc_chunks": 76,
+    "db_path": "/home/matheus/workspace/pessoal/aeromdo-copilot/data/aeromdo.db"
+  },
+  "octave_physics_parity": {
+    "octave_version": "GNU Octave 11.3.0 (running original MATLAB MDO__TRESIF_MONOPLANO.m)",
+    "test_geometry": {
+      "x_cg": 0.3,
+      "b_asa": 2.35,
+      "z_asa": 0.22,
+      "afil_asa": 0.55,
+      "cr_asa": 0.62,
+      "pr_asa": 0.45,
+      "inc_asa": 1.5,
+      "b_sh": 1.15,
+      "x_sh_ba": 1.65,
+      "z_sh": 0.42,
+      "afil_sh": 0.7,
+      "cr_sh": 0.28,
+      "pr_sh": 0.5,
+      "inc_sh": -1.5,
+      "gmp": 1
+    },
+    "comparison": {
+      "mtow_kg": {
+        "octave": 11.650391,
+        "python": 11.6465,
+        "rel_error_pct": 0.0334
+      },
+      "pv_kg": {
+        "octave": 2.890589,
+        "python": 2.8906,
+        "rel_error_pct": 0.0004
+      },
+      "cl_max_voo": {
+        "octave": 1.589533,
+        "python": 1.5895,
+        "rel_error_pct": 0.0021
+      },
+      "cl_max_solo": {
+        "octave": 1.643721,
+        "python": 1.6437,
+        "rel_error_pct": 0.0013
+      },
+      "cm_0": {
+        "octave": 0.072176,
+        "python": 0.07218,
+        "rel_error_pct": 0.0055
+      },
+      "cm_a": {
+        "octave": -0.038022,
+        "python": -0.03802,
+        "rel_error_pct": 0.0053
+      },
+      "me": {
+        "octave": 0.453498,
+        "python": 0.4535,
+        "rel_error_pct": 0.0004
+      },
+      "s_asa_m2": {
+        "octave": 1.276696,
+        "python": 1.2767,
+        "rel_error_pct": 0.0003
+      },
+      "ar_asa": {
+        "octave": 4.325618,
+        "python": 4.3256,
+        "rel_error_pct": 0.0004
+      },
+      "lht_m": {
+        "octave": 1.547847,
+        "python": 1.5478,
+        "rel_error_pct": 0.003
+      }
+    }
+  },
+  "surrogate_metrics": {
+    "dataset_total_rows": 49500,
+    "dataset_unique_cleaned_rows": 37309,
+    "train_rows": 29847,
+    "test_rows": 7462,
+    "raw_feature_columns": [
+      "is_biplane",
+      "x_cg",
+      "b_asa",
+      "z_asa",
+      "gap",
+      "afil_asa",
+      "cr_asa",
+      "pr_asa",
+      "inc_asa",
+      "b_sh",
+      "x_sh_ba",
+      "z_sh",
+      "afil_sh",
+      "cr_sh",
+      "pr_sh",
+      "inc_sh"
+    ],
+    "table_4_3_polar_validation": {
+      "split_protocol": "grouped_by_wing_geometry_id (480 train wings, 120 unseen test wings)",
+      "cl_alpha": {
+        "r2": 0.99952,
+        "rmse": 0.00926,
+        "mape_pct": 0.597,
+        "target_r2": 0.992,
+        "target_rmse": 0.012,
+        "target_mape_pct": 1.2,
+        "passes_report_table_4_3": true
+      },
+      "cd_cl": {
+        "r2": 0.99985,
+        "rmse": 0.00071,
+        "mape_pct": 0.373,
+        "target_r2": 0.985,
+        "target_rmse": 0.003,
+        "target_mape_pct": 2.1,
+        "passes_report_table_4_3": true
+      }
+    },
+    "real_avl_solver_validation": {
+      "total_avl_rows": 6285,
+      "unique_avl_rows": 4839,
+      "test_rows": 968,
+      "metrics_by_target": {
+        "cl_max_voo": {
+          "r2": 0.89536,
+          "rmse": 0.06826,
+          "mape_pct": 1.602
+        },
+        "cl_max_solo": {
+          "r2": 0.79959,
+          "rmse": 0.12677,
+          "mape_pct": 3.567
+        },
+        "cm_0": {
+          "r2": 0.95884,
+          "rmse": 0.05289,
+          "mape_pct": 8.76
+        },
+        "cm_a": {
+          "r2": 0.93988,
+          "rmse": 0.00385,
+          "mape_pct": 18.616
+        },
+        "me": {
+          "r2": 0.93872,
+          "rmse": 0.04745,
+          "mape_pct": 22.545
+        },
+        "mtow": {
+          "r2": 0.83766,
+          "rmse": 0.73761,
+          "mape_pct": 3.64
+        },
+        "x_dec": {
+          "r2": 0.57518,
+          "rmse": 4.52042,
+          "mape_pct": 7.264
+        }
+      }
+    },
+    "mdo_regression_metrics": {
+      "cl_max_voo": {
+        "r2": 0.93987,
+        "rmse": 0.03618,
+        "mape_pct": 0.615
+      },
+      "cl_max_solo": {
+        "r2": 0.87844,
+        "rmse": 0.05986,
+        "mape_pct": 1.062
+      },
+      "mtow": {
+        "r2": 0.89194,
+        "rmse": 0.50802,
+        "mape_pct": 1.98
+      },
+      "pv": {
+        "r2": 0.99941,
+        "rmse": 0.01239,
+        "mape_pct": 0.214
+      },
+      "p_voo": {
+        "r2": 0.95939,
+        "rmse": 6.7062,
+        "mape_pct": 2.702
+      },
+      "x_dec": {
+        "r2": 0.66167,
+        "rmse": 3.05753,
+        "mape_pct": 4.294
+      },
+      "cm_0": {
+        "r2": 0.97068,
+        "rmse": 0.0398,
+        "mape_pct": 7.863
+      },
+      "cm_a": {
+        "r2": 0.97187,
+        "rmse": 0.00287,
+        "mape_pct": 10.041
+      },
+      "me": {
+        "r2": 0.96262,
+        "rmse": 0.03521,
+        "mape_pct": 12.036
+      }
+    },
+    "feasibility_classifier_metrics": {
+      "roc_auc": 0.9898,
+      "f1": 0.9418,
+      "precision": 0.9165,
+      "recall": 0.9686,
+      "test_samples": 7462,
+      "features_used": [
+        "is_biplane",
+        "x_cg",
+        "b_asa",
+        "z_asa",
+        "gap",
+        "afil_asa",
+        "cr_asa",
+        "pr_asa",
+        "inc_asa",
+        "b_sh",
+        "x_sh_ba",
+        "z_sh",
+        "afil_sh",
+        "cr_sh",
+        "pr_sh",
+        "inc_sh"
+      ]
+    },
+    "grouped_by_source_file_cv": {
+      "feasibility_classifier": {
+        "roc_auc": 0.8661,
+        "f1": 0.5994,
+        "precision": 0.8834,
+        "recall": 0.4535,
+        "n_campaigns": 18
+      },
+      "regression": {
+        "cl_max_voo": {
+          "r2": 0.62245,
+          "rmse": 0.08934,
+          "mape_pct": 1.886
+        },
+        "mtow": {
+          "r2": 0.5812,
+          "rmse": 0.9871,
+          "mape_pct": 4.197
+        },
+        "p_voo": {
+          "r2": -0.15706,
+          "rmse": 35.09102,
+          "mape_pct": 10.787
+        },
+        "x_dec": {
+          "r2": -0.28661,
+          "rmse": 5.90038,
+          "mape_pct": 7.753
+        },
+        "cm_0": {
+          "r2": 0.77358,
+          "rmse": 0.10704,
+          "mape_pct": 31.755
+        },
+        "cm_a": {
+          "r2": 0.89484,
+          "rmse": 0.00538,
+          "mape_pct": 14.335
+        },
+        "me": {
+          "r2": 0.85495,
+          "rmse": 0.06748,
+          "mape_pct": 28.885
+        }
+      }
+    },
+    "model_family_benchmark": {
+      "cl_max_voo": {
+        "Polynomial_Ridge_Deg2": {
+          "r2": 0.85985,
+          "rmse": 0.05523,
+          "mape_pct": 1.342
+        },
+        "RandomForest": {
+          "r2": 0.92757,
+          "rmse": 0.0397,
+          "mape_pct": 0.708
+        },
+        "XGBoost_Surrogate": {
+          "r2": 0.93987,
+          "rmse": 0.03618,
+          "mape_pct": 0.615
+        }
+      },
+      "mtow": {
+        "Polynomial_Ridge_Deg2": {
+          "r2": 0.81192,
+          "rmse": 0.67022,
+          "mape_pct": 2.893
+        },
+        "RandomForest": {
+          "r2": 0.87516,
+          "rmse": 0.54603,
+          "mape_pct": 2.153
+        },
+        "XGBoost_Surrogate": {
+          "r2": 0.89194,
+          "rmse": 0.50802,
+          "mape_pct": 1.98
+        }
+      },
+      "p_voo": {
+        "Polynomial_Ridge_Deg2": {
+          "r2": 0.92961,
+          "rmse": 8.82936,
+          "mape_pct": 4.111
+        },
+        "RandomForest": {
+          "r2": 0.95328,
+          "rmse": 7.19306,
+          "mape_pct": 2.876
+        },
+        "XGBoost_Surrogate": {
+          "r2": 0.95939,
+          "rmse": 6.7062,
+          "mape_pct": 2.702
+        }
+      }
+    }
+  },
+  "multifidelity_pso_benchmark": {
+    "n_seeds": 5,
+    "seeds": [
+      42,
+      101,
+      202,
+      303,
+      404
+    ],
+    "n_particles": 20,
+    "n_iterations": 10,
+    "top_k_high_fidelity": 4,
+    "standard_pso": {
+      "best_p_voo": 156.2942,
+      "std_p_voo": 0.5482,
+      "min_p_voo": 155.4944,
+      "max_p_voo": 157.0696,
+      "best_mtow": 12.8496,
+      "best_pv": 2.7706,
+      "best_b_asa": 2.4726,
+      "best_me": 0.1589,
+      "is_feasible": true,
+      "physics_solver_calls": 200,
+      "surrogate_calls": 0,
+      "wall_time_ms": 36575.57,
+      "convergence_history": [
+        150.655,
+        153.762,
+        153.762,
+        154.596,
+        154.662,
+        154.996,
+        155.923,
+        155.923,
+        155.923,
+        155.923
+      ],
+      "per_seed_p_voo": [
+        155.9231,
+        157.0696,
+        156.6436,
+        155.4944,
+        156.3402
+      ]
+    },
+    "multifidelity_surrogate_pso": {
+      "best_p_voo": 153.0476,
+      "std_p_voo": 1.1454,
+      "min_p_voo": 151.3891,
+      "max_p_voo": 154.4335,
+      "best_mtow": 12.8223,
+      "best_pv": 2.7827,
+      "best_b_asa": 2.5345,
+      "best_me": 0.4178,
+      "is_feasible": true,
+      "physics_solver_calls": 40,
+      "surrogate_calls": 200,
+      "wall_time_ms": 8239.94,
+      "convergence_history": [
+        150.655,
+        151.942,
+        151.942,
+        152.601,
+        152.601,
+        153.035,
+        153.035,
+        153.953,
+        154.413,
+        154.434
+      ],
+      "per_seed_p_voo": [
+        154.4335,
+        151.3891,
+        153.9766,
+        153.3559,
+        152.0831
+      ]
+    },
+    "equal_budget_full_physics_pso": {
+      "best_p_voo": 153.9673,
+      "std_p_voo": 1.2552,
+      "min_p_voo": 151.9375,
+      "max_p_voo": 155.5401,
+      "best_mtow": 13.7793,
+      "best_pv": 2.8774,
+      "best_b_asa": 2.8336,
+      "best_me": 0.1685,
+      "is_feasible": true,
+      "physics_solver_calls": 40,
+      "surrogate_calls": 0,
+      "wall_time_ms": 7305.97,
+      "convergence_history": [
+        150.655,
+        152.376,
+        152.376,
+        153.619,
+        154.532
+      ],
+      "per_seed_p_voo": [
+        154.5325,
+        155.5401,
+        151.9375,
+        154.6054,
+        153.2211
+      ]
+    },
+    "physics_calls_reduction_pct": 80.0,
+    "wall_clock_speedup_x": 4.44,
+    "score_retention_pct": 97.92,
+    "gain_over_equal_budget_pct": -0.6
+  },
+  "rag_evaluation": {
+    "num_domain_questions": 25,
+    "num_out_of_scope_questions": 6,
+    "naive_lexical_recall_at_5": 0.92,
+    "hybrid_rag_recall_at_5": 0.96,
+    "citation_formatting_rate": 0.96,
+    "out_of_scope_abstention_accuracy": 1.0
+  },
+  "agent_evaluation": {
+    "num_eval_cases": 23,
+    "intent_accuracy": 1.0,
+    "tool_selection_accuracy": 1.0,
+    "structured_output_validity_rate": 1.0,
+    "hitl_gate_interception_rate": 1.0,
+    "held_out_conversational_local_router": {
+      "provider": "local_router",
+      "num_eval_cases": 18,
+      "intent_accuracy": 0.3889,
+      "tool_selection_accuracy": 0.3889,
+      "structured_output_validity_rate": 1.0,
+      "hitl_gate_interception_rate": 0.0,
+      "mean_latency_ms": 2.46,
+      "misclassified_examples": [
+        {
+          "msg": "Nas rodadas antigas que salvamos no Excel, qual avião biplano deu a maior pontuação de voo?",
+          "expected_intent": "database_query",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Mostra pra mim os 5 melhores monoplanos que já foram testados nas campanhas do AVL.",
+          "expected_intent": "database_query",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Dá uma olhada nos registros salvos de PatternSearch e vê qual bateu o recorde de MTOW.",
+          "expected_intent": "database_query",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Sem gastar tempo rodando o solver físico, chuta aí com o XGBoost quanto daria o MTOW de um monoplano com b_asa=2.28 e cr_asa=0.59.",
+          "expected_intent": "surrogate_prediction",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Passa essa geometria (b_asa=2.45, cr_asa=0.62, b_sh=1.12) na rede/modelo de ML pra ver se ela parece viável.",
+          "expected_intent": "surrogate_prediction",
+          "predicted_intent": "out_of_scope",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Usa o metamodelo treinado pra me dar uma estimativa instantânea de PVOO para um biplano de 2.3 m de envergadura.",
+          "expected_intent": "surrogate_prediction",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Coloca esse monoplano (b_asa=2.32, cr_asa=0.61, x_sh_ba=1.60) pra rodar nas equações de LLT e corrida de decolagem passo a passo.",
+          "expected_intent": "single_simulation",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Quero testar na física de verdade se um avião com envergadura de 2.25 m e corda de 0.58 m decola antes dos 50 metros.",
+          "expected_intent": "single_simulation",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Calcula pelas equações diferenciais de decolagem e estabilidade o MTOW exato para b_asa=2.40 e cr_asa=0.60.",
+          "expected_intent": "single_simulation",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Dispara uma busca completa por enxame de partículas pra gente achar uma geometria nova de monoplano que maximize o PVOO.",
+          "expected_intent": "batch_optimization",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        },
+        {
+          "msg": "Quero colocar o algoritmo evolucionário/enxame pra explorar o espaço de busca de biplanos agora.",
+          "expected_intent": "batch_optimization",
+          "predicted_intent": "documentation_rag",
+          "provider_used": "local_router"
+        }
+      ]
+    },
+    "held_out_conversational_gemini_2_5_flash": {
+      "provider": "gemini",
+      "num_eval_cases": 18,
+      "intent_accuracy": 1.0,
+      "tool_selection_accuracy": 1.0,
+      "structured_output_validity_rate": 1.0,
+      "hitl_gate_interception_rate": 1.0,
+      "mean_latency_ms": 10167.29,
+      "misclassified_examples": []
+    }
+  }
+}

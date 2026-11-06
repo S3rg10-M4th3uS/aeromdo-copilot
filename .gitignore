@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.direnv/
+result
+*.egg-info/
+dist/
+build/
+.env
+data/*.db
+artifacts/models/*.pkl
