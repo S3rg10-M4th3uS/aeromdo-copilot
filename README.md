@@ -71,7 +71,7 @@ Nas cinco sementes, são 1.000 contra 200 chamadas físicas. O multifidelidade t
 
 **Qualidade da solução:** o multifidelidade reteve `153,0476 / 156,2942 × 100 = 97,92%` do PVOO médio do PSO físico de 200 chamadas. O controle físico de igual orçamento foi mais rápido e teve PVOO médio cerca de 0,6% maior que o multifidelidade. Portanto, 4,44× se refere exclusivamente ao baseline de 200 chamadas, sem evidência de superioridade sobre o controle de 40 chamadas. Os desvios da tabela são populacionais (`numpy.std`, `ddof=0`), não intervalos de confiança nem teste de equivalência estatística.
 
-### Recall@5 de 96% e abstenção de 100%
+### Hit@5 por página de 96% e abstenção de 100%
 
 A avaliação usa **31 perguntas fixas**: **25 técnicas**, com páginas esperadas anotadas, e **6 fora de escopo**. O corpus contém **76 trechos extraídos do PDF do Relatório de Projeto Conceitual, Preliminar e Integração 2026**. As perguntas e os rótulos estão em `RAG_BENCHMARK_QUESTIONS` e `OUT_OF_SCOPE_QUESTIONS`, em [evals.py](src/aeromdo/evals.py).
 
@@ -80,9 +80,9 @@ O recuperador combina similaridade TF-IDF de palavras (peso 0,65) e caracteres (
 **Critério de acerto:** para cada pergunta técnica, recuperar até cinco trechos e verificar se pelo menos uma página citada pertence ao conjunto de páginas esperado.
 
 ```text
-Recall@5 reportado = perguntas com ao menos uma página esperada entre as citações / 25
-                  = 24 / 25 = 96%
-baseline lexical  = 23 / 25 = 92%
+Hit@5 por página = perguntas com ao menos uma página esperada entre as cinco citações / 25
+                 = 24 / 25 = 96%
+baseline lexical = 23 / 25 = 92%
 ```
 
 Embora o código nomeie a métrica `hybrid_rag_recall_at_5`, operacionalmente ela é uma **taxa de acerto por pergunta (Hit@5) por página**. Não mede a fração de todos os trechos relevantes recuperados nem a correção integral da resposta. Quando uma pergunta tem várias páginas esperadas, basta acertar uma delas. Uma abstenção em pergunta técnica conta como erro.
