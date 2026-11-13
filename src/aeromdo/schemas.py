@@ -232,9 +232,9 @@ class AgentChatRequest(BaseModel):
     """Input request to the AeroMDO Copilot Agent."""
 
     message: str = Field(..., min_length=2, description="User natural-language question or command.")
-    provider: Literal["auto", "local_router", "gemini", "ollama"] = Field(
-        default="auto",
-        description="LLM provider selection ('auto' uses Gemini if GEMINI_API_KEY is set, else deterministic local_router).",
+    provider: Literal["agy", "codex"] = Field(
+        default="agy",
+        description="LLM router provider ('agy' uses Gemini Pro CLI; 'codex' uses ChatGPT Pro CLI).",
     )
     require_human_approval_for_batch: bool = Field(
         default=True,
@@ -267,5 +267,5 @@ class AgentChatResponse(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     approval_ticket: HumanApprovalTicket | None = None
     structured_data: dict[str, Any] = Field(default_factory=dict)
-    provider_used: str = Field(default="local_router")
+    provider_used: Literal["agy", "codex"] = Field(default="agy")
     total_latency_ms: float = Field(..., ge=0.0)

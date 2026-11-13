@@ -143,7 +143,9 @@ def _run_routing_cases(
     cases: list[dict[str, str]],
     provider: str,
 ) -> dict[str, Any]:
-    """Run a list of routing test cases under the specified provider ('local_router' or 'gemini')."""
+    """Run a list of routing test cases under the specified CLI provider ('agy' or 'codex')."""
+    if provider not in ("agy", "codex"):
+        raise ValueError(f"Unsupported router provider '{provider}'. Expected 'agy' or 'codex'.")
     intent_correct = 0
     tool_correct = 0
     schema_valid = 0
@@ -206,22 +208,23 @@ def _run_routing_cases(
     }
 
 
-def evaluate_agent_suite(agent: AeroMDOCopilotAgent) -> dict[str, Any]:
-    """Evaluate agent intent classification, tool selection accuracy, HITL safety, and real Gemini LLM routing."""
-    canonical_local = _run_routing_cases(agent, AGENT_ROUTING_BENCHMARK, provider="local_router")
-    held_out_local = _run_routing_cases(agent, HELD_OUT_NATURAL_PROMPTS, provider="local_router")
-
+def evaluate_agent_suite(
+    agent: AeroMDOCopilotAgent,
+    provider: str = "agy",
+    include_held_out: bool = True,
+) -> dict[str, Any]:
+    """Evaluate agent intent classification, tool selection accuracy, and HITL safety via `agy` or `codex`."""
+    canonical = _run_routing_cases(agent, AGENT_ROUTING_BENCHMARK, provider=provider)
     result: dict[str, Any] = {
-        "num_eval_cases": canonical_local["num_eval_cases"],
-        "intent_accuracy": canonical_local["intent_accuracy"],
-        "tool_selection_accuracy": canonical_local["tool_selection_accuracy"],
-        "structured_output_validity_rate": canonical_local["structured_output_validity_rate"],
-        "hitl_gate_interception_rate": canonical_local["hitl_gate_interception_rate"],
-        "held_out_conversational_local_router": held_out_local,
+        "provider": provider,
+        "num_eval_cases": canonical["num_eval_cases"],
+        "intent_accuracy": canonical["intent_accuracy"],
+        "tool_selection_accuracy": canonical["tool_selection_accuracy"],
+        "structured_output_validity_rate": canonical["structured_output_validity_rate"],
+        "hitl_gate_interception_rate": canonical["hitl_gate_interception_rate"],
     }
-
-    if os.environ.get("GEMINI_API_KEY", "").strip():
-        held_out_gemini = _run_routing_cases(agent, HELD_OUT_NATURAL_PROMPTS, provider="gemini")
-        result["held_out_conversational_gemini_2_5_flash"] = held_out_gemini
-
+    if include_held_out:
+        result["held_out_conversational"] = _run_routing_cases(
+            agent, HELD_OUT_NATURAL_PROMPTS, provider=provider
+        )
     return result

@@ -17,7 +17,7 @@ import pandas as pd
 from aeromdo.physics import compute_empty_weight_pv, LiftingSurface, compute_geometry, get_airfoil_profile
 
 
-DEFAULT_RAW_DIR = Path("/home/matheus/workspace/pessoal/MONOPLANO/EOCORRIDAS2024_CalibradoXF_avofc_rela")
+DEFAULT_RAW_DIR = Path(os.environ.get("AEROMDO_RAW_DIR", str(Path(__file__).resolve().parents[2] / "data" / "raw")))
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "aeromdo.db"
 
 

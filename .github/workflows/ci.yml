@@ -18,5 +18,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Install Python package
         run: pip install -e ".[dev]"
-      - name: Run physics unit tests
-        run: pytest tests/test_physics.py
+      - name: Run physics, API contracts and agent approval tests
+        run: pytest tests/test_physics.py tests/test_api_contracts.py

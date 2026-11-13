@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -66,30 +67,30 @@ def main() -> None:
         f"(Multi-Fidelity gain: +{pso_benchmark['gain_over_equal_budget_pct']}%)"
     )
 
-    print("[4/4] Running Honest RAG & Agent Tool-Calling Evaluation Suite (Local + Gemini 2.5 Flash)...")
+    provider = os.environ.get("AEROMDO_LLM_PROVIDER", "agy").strip().lower()
+    if provider not in ("agy", "codex"):
+        provider = "agy"
+    print(f"[4/4] Running Honest RAG & Agent Tool-Calling Evaluation Suite (CLI router: {provider})...")
     rag = AeroRAGIndex(db_path=DEFAULT_DB_PATH)
     rag_eval = evaluate_rag_suite(rag, top_k=5)
     agent = AeroMDOCopilotAgent(db_path=DEFAULT_DB_PATH, model_dir=DEFAULT_MODEL_DIR)
-    agent_eval = evaluate_agent_suite(agent)
+    agent_eval = evaluate_agent_suite(agent, provider=provider)
     print(
         f"      -> RAG Recall@5 (25 raw PDF questions): {rag_eval['hybrid_rag_recall_at_5']*100:.1f}% "
         f"(vs. {rag_eval['naive_lexical_recall_at_5']*100:.1f}% naive lexical), "
         f"Out-of-Scope Abstention: {rag_eval['out_of_scope_abstention_accuracy']*100:.1f}%"
     )
     print(
-        f"      -> Canonical Agent Routing (23 cases): Tool Acc={agent_eval['tool_selection_accuracy']*100:.1f}%, "
+        f"      -> Canonical Agent Routing ({agent_eval['num_eval_cases']} cases, {provider}): "
+        f"Tool Acc={agent_eval['tool_selection_accuracy']*100:.1f}%, "
         f"HITL Interception={agent_eval['hitl_gate_interception_rate']*100:.1f}%"
     )
-    ho_local = agent_eval["held_out_conversational_local_router"]
-    print(
-        f"      -> Held-Out Conversational Local Router (18 cases): Intent={ho_local['intent_accuracy']*100:.1f}%, "
-        f"Tool={ho_local['tool_selection_accuracy']*100:.1f}%"
-    )
-    if "held_out_conversational_gemini_2_5_flash" in agent_eval:
-        ho_gem = agent_eval["held_out_conversational_gemini_2_5_flash"]
+    if "held_out_conversational" in agent_eval:
+        ho = agent_eval["held_out_conversational"]
         print(
-            f"      -> Held-Out Conversational Gemini 2.5 Flash (18 cases): Intent={ho_gem['intent_accuracy']*100:.1f}%, "
-            f"Tool={ho_gem['tool_selection_accuracy']*100:.1f}% (avg latency {ho_gem['mean_latency_ms']} ms)"
+            f"      -> Held-Out Conversational ({ho['num_eval_cases']} cases, {provider}): "
+            f"Intent={ho['intent_accuracy']*100:.1f}%, Tool={ho['tool_selection_accuracy']*100:.1f}% "
+            f"(avg latency {ho['mean_latency_ms']} ms)"
         )
 
     octave_parity = {

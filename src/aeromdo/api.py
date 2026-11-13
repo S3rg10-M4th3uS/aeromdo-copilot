@@ -111,25 +111,33 @@ def index_dashboard() -> str:
 </head>
 <body>
   <h1>✈️ AeroMDO Copilot</h1>
-  <div class="sub">Engenharia de IA & Otimização Multidisciplinar (MDO) — ~51.000 avaliações + Surrogate XGBoost + RAG Relatório 2026</div>
+  <div class="sub">Engenharia de IA & Otimização Multidisciplinar (MDO) — 49.500 avaliações + Surrogate XGBoost + RAG Relatório 2026</div>
   <div class="card">
     <h3>Pergunte ao Agente (Banco MDO, Surrogate, Simulador Físico ou Relatório 2026)</h3>
     <textarea id="msg" rows="3">Quais configurações de monoplano com envergadura menor que 3.0 m tiveram o maior PVOO no banco de dados?</textarea>
-    <button onclick="sendChat()">Enviar ao Agente</button>
+    <div style="margin-top:0.6rem; display:flex; gap:0.6rem; align-items:center;">
+      <label for="provider" style="font-size:0.9rem; color:#cbd5e1;">Roteador LLM:</label>
+      <select id="provider" style="background:#0f172a; color:#f8fafc; border:1px solid #475569; border-radius:6px; padding:0.45rem;">
+        <option value="agy">agy (Gemini Pro CLI - sem API key)</option>
+        <option value="codex">codex (ChatGPT Pro CLI - sem API key)</option>
+      </select>
+      <button onclick="sendChat()" style="margin-top:0;">Enviar ao Agente</button>
+    </div>
     <div id="out" style="margin-top:1rem;"></div>
   </div>
   <script>
     async function sendChat() {
       const msg = document.getElementById('msg').value;
+      const provider = document.getElementById('provider').value;
       const out = document.getElementById('out');
       out.innerHTML = 'Processando...';
       const res = await fetch('/agent/chat', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message: msg, provider: 'auto'})
+        body: JSON.stringify({message: msg, provider: provider})
       });
       const data = await res.json();
-      out.innerHTML = `<p><span class="pill">Intent: ${data.intent}</span><span class="pill">Latência: ${data.total_latency_ms} ms</span></p>`
+      out.innerHTML = `<p><span class="pill">Intent: ${data.intent}</span><span class="pill">Provider: ${data.provider_used}</span><span class="pill">Latência: ${data.total_latency_ms} ms</span></p>`
         + `<p><strong>Resposta:</strong> ${data.answer}</p>`
         + `<pre>${JSON.stringify(data, null, 2)}</pre>`;
     }

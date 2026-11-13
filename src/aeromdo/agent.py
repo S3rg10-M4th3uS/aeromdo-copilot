@@ -1,9 +1,8 @@
 """Agentic Orchestrator with Tool Calling, Human-in-the-Loop (HITL), and Structured Outputs.
 
-Supports:
-- Local deterministic intent & parameter router (100% offline, 0 cost, deterministic CI evals)
-- Google Gemini API (`GEMINI_API_KEY` via REST function calling / structured JSON)
-- Local Ollama (`OLLAMA_HOST`)
+Supports exclusively local subscription CLI routers:
+- Antigravity CLI (`agy --print`, uses Gemini Pro subscription locally without API key)
+- Codex CLI (`codex exec`, uses ChatGPT Pro subscription locally without API key)
 """
 
 from __future__ import annotations
@@ -11,13 +10,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Any
-
-import httpx
 
 from aeromdo.data_pipeline import DEFAULT_DB_PATH
 from aeromdo.physics import run_simulation
@@ -177,166 +177,176 @@ class AeroMDOCopilotAgent:
 
         return params
 
-    @staticmethod
-    def classify_intent(message: str) -> str:
-        """Deterministic domain intent classifier for routing tool calls reliably."""
-        lower = message.lower()
+    ROUTER_SYSTEM_INSTRUCTION = (
+        "Você é o roteador de ferramentas (Tool Router) do AeroMDO Copilot, um sistema de engenharia aeronáutica "
+        "para a competição SAE BRASIL AeroDesign 2026.\n"
+        "Classifique a solicitação do usuário em exatamente uma das 6 intenções e escolha a ferramenta correspondente:\n"
+        "1. intent='database_query', tool_name='query_mdo_database': quando o usuário quiser consultar o banco de dados "
+        "histórico (~49,5 mil avaliações salvas nas planilhas Excel), filtrar os melhores indivíduos já avaliados, "
+        "comparar campanhas passadas (AVL vs LLT, PSO vs PatternSearch, monoplano vs biplano) ou ver o maior MTOW/PVOO salvo.\n"
+        "2. intent='surrogate_prediction', tool_name='predict_surrogate': quando o usuário pedir uma predição/estimativa "
+        "rápida usando o metamodelo de Machine Learning (surrogate / XGBoost) para uma geometria específica.\n"
+        "3. intent='single_simulation', tool_name='run_physics_simulation': quando o usuário pedir para simular/calcular "
+        "uma geometria específica diretamente no simulador físico acoplado (LLT, estabilidade, peso vazio, corrida de decolagem).\n"
+        "4. intent='batch_optimization', tool_name='run_multifidelity_pso': quando o usuário pedir para rodar/executar uma "
+        "nova busca/otimização por enxame de partículas (PSO / MDO multifidelidade) para encontrar uma aeronave ótima.\n"
+        "5. intent='documentation_rag', tool_name='search_technical_docs': quando o usuário fizer perguntas conceituais, "
+        "de requisitos (REQ-SYS, REQ-AEROD, REQ-ESTC, REQ-ADES, DG), equações, tabelas, metodologia ou justificativas "
+        "do Relatório de Projeto 2026 ou do regulamento SAE AeroDesign.\n"
+        "6. intent='out_of_scope', tool_name='none': quando a pergunta não tiver relação com engenharia aeronáutica, "
+        "MDO, física de voo ou SAE AeroDesign (ex: culinária, futebol, investimentos financeiros, cinema, etc.).\n"
+        "Extraia também parâmetros numéricos se mencionados (b_asa em metros, cr_asa em metros, afil_asa, b_sh, cr_sh, x_sh_ba, x_cg; "
+        "use null quando um campo numérico não for informado)."
+    )
 
-        # Check out-of-scope topics first (cooking, unrelated finance, movies, soccer, etc.)
-        aero_word_regex = re.compile(
-            r"\b(?:asa|eh|sh|empenagem|mtow|pvoo|p_voo|pv|peso\s+vazio|carga\s+paga|decolagem|"
-            r"estol|stall|cl|cd|cm0|cm_0|cma|cm_a|margem\s+est[aá]tica|alongamento|avl|llt|vlm|"
-            r"xfoil|flightstream|surrogate|pso|pattern\s*search|mdo|biplano|monoplano|longarina|"
-            r"tubo\s+c[oô]nico|viga|s1223|naca|jcf|tabela|relat[oó]rio|regulamento|envergadura|"
-            r"corda|afilamento|perfil|perfis|motor|h[eé]lice|gmp|tractor|pusher|simula\w*|otimiza\w*|"
-            r"enxame|hipercubo|doe|aeronave|avi[aã]o|banco|planilha\w*|avalia[cç]\w*|indiv[ií]duo\w*|"
-            r"cg|pert|ishikawa|triciclo|fuselagem)\b|req-[a-z]+-\d+|dg-\d+",
-            re.IGNORECASE,
-        )
-        if not aero_word_regex.search(lower):
-            return "out_of_scope"
+    STANDARD_ROUTER_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "intent": {
+                "type": "string",
+                "enum": [
+                    "documentation_rag",
+                    "database_query",
+                    "surrogate_prediction",
+                    "single_simulation",
+                    "batch_optimization",
+                    "out_of_scope",
+                ],
+            },
+            "tool_name": {
+                "type": "string",
+                "enum": [
+                    "search_technical_docs",
+                    "query_mdo_database",
+                    "predict_surrogate",
+                    "run_physics_simulation",
+                    "run_multifidelity_pso",
+                    "none",
+                ],
+            },
+            "architecture": {"type": "string", "enum": ["monoplane", "biplane", "unspecified"]},
+            "solver": {"type": "string", "enum": ["AVL", "LLT", "unspecified"]},
+            "optimizer": {"type": "string", "enum": ["PSO", "PatternSearch", "unspecified"]},
+            "b_asa": {"type": ["number", "null"]},
+            "cr_asa": {"type": ["number", "null"]},
+            "afil_asa": {"type": ["number", "null"]},
+            "b_sh": {"type": ["number", "null"]},
+            "cr_sh": {"type": ["number", "null"]},
+            "x_sh_ba": {"type": ["number", "null"]},
+            "x_cg": {"type": ["number", "null"]},
+            "max_b_asa": {"type": ["number", "null"]},
+            "order_by": {"type": "string", "enum": ["p_voo", "mtow"]},
+        },
+        "required": [
+            "intent",
+            "tool_name",
+            "architecture",
+            "solver",
+            "optimizer",
+            "b_asa",
+            "cr_asa",
+            "afil_asa",
+            "b_sh",
+            "cr_sh",
+            "x_sh_ba",
+            "x_cg",
+            "max_b_asa",
+            "order_by",
+        ],
+    }
 
-        # 1. Batch optimization (PSO / MDO optimization run)
-        if any(
-            phrase in lower
-            for phrase in (
-                "rodar pso", "executar pso", "otimizar com pso", "rodar otimização",
-                "rodar otimizacao", "executar otimização", "executar otimizacao",
-                "iniciar mdo", "executar mdo", "otimização multifidelidade",
-                "otimizacao multifidelidade", "buscar ótimo com pso",
-            )
-        ):
-            return "batch_optimization"
-
-        # 2. Single physics simulation run
-        if any(
-            phrase in lower
-            for phrase in (
-                "rodar simulação", "rodar simulacao", "simular aeronave", "simular física",
-                "simular fisica", "executar simulador", "calcular na simulação física",
-                "simule no modelo físico", "simule um monoplano", "simule um biplano",
-            )
-        ):
-            return "single_simulation"
-
-        # 3. Fast surrogate prediction
-        if any(
-            phrase in lower
-            for phrase in (
-                "prever com surrogate", "previsão do surrogate", "previsao do surrogate",
-                "estimar com surrogate", "usar o surrogate", "inferência rápida",
-                "inferencia rapida", "quanto o surrogate prevê", "quanto o surrogate preve",
-                "preveja com o modelo surrogate", "predição rápida",
-            )
-        ):
-            return "surrogate_prediction"
-
-        # 4. Historical database queries (~51k evaluations)
-        if any(
-            phrase in lower
-            for phrase in (
-                "banco de dados", "planilhas", "histórico", "historico", "avaliações salvas",
-                "avaliacoes salvas", "quantos indivíduos", "quantos individuos", "top 5",
-                "melhores configurações do banco", "melhores indivíduos no banco",
-                "consultar resultados", "filtrar no banco", "média de mtow no banco",
-                "comparar avl e llt no banco", "maior mtow nas planilhas",
-            )
-        ):
-            return "database_query"
-
-        # 5. Technical report & requirements RAG
-        return "documentation_rag"
-
-    @staticmethod
-    def _route_with_gemini(message: str) -> dict[str, Any] | None:
-        """Use Google Gemini 2.5 Flash with Structured Outputs (responseSchema) to route intent & extract tool arguments."""
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
+    @classmethod
+    def _route_with_agy(cls, message: str) -> dict[str, Any] | None:
+        """Route intent & extract parameters via installed `agy` CLI (Gemini Pro subscription, no API key)."""
+        agy_bin = shutil.which("agy")
+        if not agy_bin:
             return None
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        system_instruction = (
-            "Você é o roteador de ferramentas (Tool Router) do AeroMDO Copilot, um sistema de engenharia aeronáutica "
-            "para a competição SAE BRASIL AeroDesign 2026.\n"
-            "Classifique a solicitação do usuário em exatamente uma das 6 intenções e escolha a ferramenta correspondente:\n"
-            "1. intent='database_query', tool_name='query_mdo_database': quando o usuário quiser consultar o banco de dados "
-            "histórico (~49,5 mil avaliações salvas nas planilhas Excel), filtrar os melhores indivíduos já avaliados, "
-            "comparar campanhas passadas (AVL vs LLT, PSO vs PatternSearch, monoplano vs biplano) ou ver o maior MTOW/PVOO salvo.\n"
-            "2. intent='surrogate_prediction', tool_name='predict_surrogate': quando o usuário pedir uma predição/estimativa "
-            "rápida usando o metamodelo de Machine Learning (surrogate / XGBoost) para uma geometria específica.\n"
-            "3. intent='single_simulation', tool_name='run_physics_simulation': quando o usuário pedir para simular/calcular "
-            "uma geometria específica diretamente no simulador físico acoplado (LLT, estabilidade, peso vazio, corrida de decolagem).\n"
-            "4. intent='batch_optimization', tool_name='run_multifidelity_pso': quando o usuário pedir para rodar/executar uma "
-            "nova busca/otimização por enxame de partículas (PSO / MDO multifidelidade) para encontrar uma aeronave ótima.\n"
-            "5. intent='documentation_rag', tool_name='search_technical_docs': quando o usuário fizer perguntas conceituais, "
-            "de requisitos (REQ-SYS, REQ-AEROD, REQ-ESTC, REQ-ADES, DG), equações, tabelas, metodologia ou justificativas "
-            "do Relatório de Projeto 2026 ou do regulamento SAE AeroDesign.\n"
-            "6. intent='out_of_scope', tool_name='none': quando a pergunta não tiver relação com engenharia aeronáutica, "
-            "MDO, física de voo ou SAE AeroDesign (ex: culinária, futebol, investimentos financeiros, cinema, etc.).\n"
-            "Extraia também parâmetros numéricos se mencionados (b_asa em metros, cr_asa em metros, afil_asa, b_sh, cr_sh, x_sh_ba, x_cg)."
+        prompt = (
+            f"{cls.ROUTER_SYSTEM_INSTRUCTION}\n\n"
+            f"Solicitação do usuário: {message}\n"
+            "Responda exclusivamente com o objeto JSON estruturado seguindo o schema."
         )
-        schema = {
-            "type": "OBJECT",
-            "properties": {
-                "intent": {
-                    "type": "STRING",
-                    "enum": [
-                        "documentation_rag",
-                        "database_query",
-                        "surrogate_prediction",
-                        "single_simulation",
-                        "batch_optimization",
-                        "out_of_scope",
-                    ],
-                },
-                "tool_name": {
-                    "type": "STRING",
-                    "enum": [
-                        "search_technical_docs",
-                        "query_mdo_database",
-                        "predict_surrogate",
-                        "run_physics_simulation",
-                        "run_multifidelity_pso",
-                        "none",
-                    ],
-                },
-                "architecture": {"type": "STRING", "enum": ["monoplane", "biplane", "unspecified"]},
-                "solver": {"type": "STRING", "enum": ["AVL", "LLT", "unspecified"]},
-                "optimizer": {"type": "STRING", "enum": ["PSO", "PatternSearch", "unspecified"]},
-                "b_asa": {"type": "NUMBER"},
-                "cr_asa": {"type": "NUMBER"},
-                "afil_asa": {"type": "NUMBER"},
-                "b_sh": {"type": "NUMBER"},
-                "cr_sh": {"type": "NUMBER"},
-                "x_sh_ba": {"type": "NUMBER"},
-                "x_cg": {"type": "NUMBER"},
-                "max_b_asa": {"type": "NUMBER"},
-                "order_by": {"type": "STRING", "enum": ["p_voo", "mtow"]},
-            },
-            "required": ["intent", "tool_name"],
-        }
-        payload = {
-            "systemInstruction": {"parts": [{"text": system_instruction}]},
-            "contents": [{"role": "user", "parts": [{"text": message}]}],
-            "generationConfig": {
-                "temperature": 0.0,
-                "responseMimeType": "application/json",
-                "responseSchema": schema,
-            },
-        }
         try:
-            with httpx.Client(timeout=15.0) as client:
-                for attempt in range(4):
-                    resp = client.post(url, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                        return json.loads(raw_text)
-                    if resp.status_code == 429 and attempt < 3:
-                        time.sleep(4.5 * (attempt + 1))
-                        continue
-                    break
+            proc = subprocess.run(
+                [
+                    agy_bin,
+                    "--print",
+                    prompt,
+                    "--output-format",
+                    "json",
+                    "--json-schema",
+                    json.dumps(cls.STANDARD_ROUTER_SCHEMA, ensure_ascii=False),
+                    "--effort",
+                    "low",
+                    "--disable-slash-commands",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+            if proc.returncode != 0 or not proc.stdout.strip():
+                return None
+            payload = json.loads(proc.stdout.strip())
+            if isinstance(payload.get("structured_output"), dict):
+                return payload["structured_output"]
+            if isinstance(payload.get("response"), str):
+                return json.loads(payload["response"].strip())
         except Exception:
             return None
+        return None
+
+    @classmethod
+    def _route_with_codex(cls, message: str) -> dict[str, Any] | None:
+        """Route intent & extract parameters via installed `codex exec` CLI (ChatGPT Pro subscription, no API key)."""
+        codex_bin = shutil.which("codex")
+        if not codex_bin:
+            return None
+        prompt = (
+            f"{cls.ROUTER_SYSTEM_INSTRUCTION}\n\n"
+            f"Solicitação do usuário: {message}\n"
+            "Não execute comandos no terminal; apenas retorne o JSON final conforme o output-schema."
+        )
+        schema_path: Path | None = None
+        out_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as sf:
+                json.dump(cls.STANDARD_ROUTER_SCHEMA, sf, ensure_ascii=False)
+                schema_path = Path(sf.name)
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as of:
+                out_path = Path(of.name)
+
+            proc = subprocess.run(
+                [
+                    codex_bin,
+                    "exec",
+                    "--ephemeral",
+                    "--skip-git-repo-check",
+                    "-s",
+                    "read-only",
+                    "--output-schema",
+                    str(schema_path),
+                    "-o",
+                    str(out_path),
+                    prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if proc.returncode == 0 and out_path.exists():
+                raw = out_path.read_text(encoding="utf-8").strip()
+                if raw:
+                    return json.loads(raw)
+        except Exception:
+            return None
+        finally:
+            if schema_path and schema_path.exists():
+                schema_path.unlink(missing_ok=True)
+            if out_path and out_path.exists():
+                out_path.unlink(missing_ok=True)
         return None
 
     # -------------------------------------------------------------------------
@@ -345,18 +355,20 @@ class AeroMDOCopilotAgent:
     def chat(self, req: AgentChatRequest) -> AgentChatResponse:
         """Process a user message, invoke appropriate tools, enforce HITL, and return structured output."""
         t0 = time.perf_counter()
-        gemini_route: dict[str, Any] | None = None
-        provider_used = "local_router"
-
-        if req.provider == "gemini" and os.environ.get("GEMINI_API_KEY"):
-            gemini_route = self._route_with_gemini(req.message)
-            if gemini_route and "intent" in gemini_route:
-                intent = str(gemini_route["intent"])
-                provider_used = "gemini"
-            else:
-                intent = self.classify_intent(req.message)
+        if req.provider == "agy":
+            llm_route = self._route_with_agy(req.message)
+        elif req.provider == "codex":
+            llm_route = self._route_with_codex(req.message)
         else:
-            intent = self.classify_intent(req.message)
+            raise ValueError(f"Unsupported router provider '{req.provider}'. Expected 'agy' or 'codex'.")
+
+        if not llm_route or "intent" not in llm_route:
+            raise RuntimeError(
+                f"LLM router '{req.provider}' failed to return a valid structured intent."
+            )
+
+        intent = str(llm_route["intent"])
+        provider_used = req.provider
 
         tool_calls: list[ToolCallRecord] = []
         citations: list[Citation] = []
@@ -381,8 +393,8 @@ class AeroMDOCopilotAgent:
 
         if intent == "batch_optimization":
             params = self.extract_aircraft_params_from_text(req.message)
-            if gemini_route and gemini_route.get("architecture") in ("monoplane", "biplane"):
-                params["architecture"] = gemini_route["architecture"]
+            if llm_route and llm_route.get("architecture") in ("monoplane", "biplane"):
+                params["architecture"] = llm_route["architecture"]
             arch = params.get("architecture", "monoplane")
             proposed_args = {
                 "architecture": arch,
@@ -461,12 +473,12 @@ class AeroMDOCopilotAgent:
 
         elif intent == "single_simulation":
             params = self.extract_aircraft_params_from_text(req.message)
-            if gemini_route:
-                if gemini_route.get("architecture") in ("monoplane", "biplane"):
-                    params.setdefault("architecture", gemini_route["architecture"])
+            if llm_route:
+                if llm_route.get("architecture") in ("monoplane", "biplane"):
+                    params.setdefault("architecture", llm_route["architecture"])
                 for k in ("b_asa", "cr_asa", "afil_asa", "b_sh", "cr_sh", "x_sh_ba", "x_cg"):
-                    if isinstance(gemini_route.get(k), (int, float)) and gemini_route[k] > 0:
-                        params.setdefault(k, float(gemini_route[k]))
+                    if isinstance(llm_route.get(k), (int, float)) and llm_route[k] > 0:
+                        params.setdefault(k, float(llm_route[k]))
             t_tool = time.perf_counter()
             sim_out = self.tool_run_physics_simulation(params)
             t_lat = (time.perf_counter() - t_tool) * 1000.0
@@ -498,12 +510,12 @@ class AeroMDOCopilotAgent:
 
         elif intent == "surrogate_prediction":
             params = self.extract_aircraft_params_from_text(req.message)
-            if gemini_route:
-                if gemini_route.get("architecture") in ("monoplane", "biplane"):
-                    params.setdefault("architecture", gemini_route["architecture"])
+            if llm_route:
+                if llm_route.get("architecture") in ("monoplane", "biplane"):
+                    params.setdefault("architecture", llm_route["architecture"])
                 for k in ("b_asa", "cr_asa", "afil_asa", "b_sh", "cr_sh", "x_sh_ba", "x_cg"):
-                    if isinstance(gemini_route.get(k), (int, float)) and gemini_route[k] > 0:
-                        params.setdefault(k, float(gemini_route[k]))
+                    if isinstance(llm_route.get(k), (int, float)) and llm_route[k] > 0:
+                        params.setdefault(k, float(llm_route[k]))
             t_tool = time.perf_counter()
             pred_out = self.tool_predict_surrogate(params)
             t_lat = (time.perf_counter() - t_tool) * 1000.0
@@ -538,17 +550,17 @@ class AeroMDOCopilotAgent:
             max_b = float(m_b.group(1).replace(",", ".")) if m_b else None
             order_by = "mtow" if "maior mtow" in lower else "p_voo"
 
-            if gemini_route:
-                if arch is None and gemini_route.get("architecture") in ("monoplane", "biplane"):
-                    arch = gemini_route["architecture"]
-                if solver is None and gemini_route.get("solver") in ("AVL", "LLT"):
-                    solver = gemini_route["solver"]
-                if opt is None and gemini_route.get("optimizer") in ("PSO", "PatternSearch"):
-                    opt = gemini_route["optimizer"]
-                if max_b is None and isinstance(gemini_route.get("max_b_asa"), (int, float)) and gemini_route["max_b_asa"] > 0:
-                    max_b = float(gemini_route["max_b_asa"])
-                if gemini_route.get("order_by") in ("mtow", "p_voo"):
-                    order_by = gemini_route["order_by"]
+            if llm_route:
+                if arch is None and llm_route.get("architecture") in ("monoplane", "biplane"):
+                    arch = llm_route["architecture"]
+                if solver is None and llm_route.get("solver") in ("AVL", "LLT"):
+                    solver = llm_route["solver"]
+                if opt is None and llm_route.get("optimizer") in ("PSO", "PatternSearch"):
+                    opt = llm_route["optimizer"]
+                if max_b is None and isinstance(llm_route.get("max_b_asa"), (int, float)) and llm_route["max_b_asa"] > 0:
+                    max_b = float(llm_route["max_b_asa"])
+                if llm_route.get("order_by") in ("mtow", "p_voo"):
+                    order_by = llm_route["order_by"]
 
             q_args = {
                 "architecture": arch,
@@ -623,13 +635,6 @@ class AeroMDOCopilotAgent:
                     total_latency_ms=round(elapsed, 3),
                 )
 
-        # Optional LLM synthesis polish if provider=='auto' and Gemini API key is configured
-        if req.provider == "auto" and os.environ.get("GEMINI_API_KEY"):
-            synthesized = self._try_gemini_synthesis(req.message, answer, structured_data)
-            if synthesized:
-                answer = synthesized
-                provider_used = "gemini"
-
         elapsed = (time.perf_counter() - t0) * 1000.0
         return AgentChatResponse(
             intent=intent,  # type: ignore[arg-type]
@@ -659,26 +664,3 @@ class AeroMDOCopilotAgent:
             seeds=[42],
         )
         return {"ticket": ticket.model_dump(), "result": res}
-
-    @staticmethod
-    def _try_gemini_synthesis(user_query: str, grounded_draft: str, context_data: dict[str, Any]) -> str | None:
-        """Optionally refine the grounded response via Google Gemini REST API while preserving numbers & citations."""
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            return None
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        prompt = (
-            "Você é o AeroMDO Copilot da equipe de AeroDesign. Responda em português de forma técnica, concisa e "
-            "fiel aos dados abaixo, mantendo todas as métricas numéricas e citações de páginas/requisitos:\n\n"
-            f"Pergunta: {user_query}\n"
-            f"Rascunho verificado pelas ferramentas: {grounded_draft}\n"
-        )
-        try:
-            with httpx.Client(timeout=8.0) as client:
-                resp = client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        except Exception:
-            return None
-        return None

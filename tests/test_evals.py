@@ -61,18 +61,40 @@ def test_rag_evaluation_benchmark() -> None:
     assert metrics["out_of_scope_abstention_accuracy"] == 1.0
 
 
-def test_agent_routing_and_hitl_safety() -> None:
-    """Verify Agent tool routing accuracy, structured outputs, and Human-in-the-Loop gate."""
+def _fake_cli_route(msg: str) -> dict[str, object]:
+    """Deterministic stub simulating structured JSON output from `agy` / `codex` CLI routers."""
+    lower = msg.lower()
+    if any(w in lower for w in ("lasanha", "futebol", "netflix", "tesouro", "pizza")):
+        return {"intent": "out_of_scope", "tool_name": "none"}
+    if any(w in lower for w in ("rodar pso", "otimização com pso", "otimizacao com pso", "iniciar mdo", "enxame", "algoritmo evolucionário")):
+        arch = "biplane" if "biplano" in lower else "monoplane"
+        return {"intent": "batch_optimization", "tool_name": "run_multifidelity_pso", "architecture": arch}
+    if any(w in lower for w in ("rodar simulação", "rodar simulacao", "simule um", "executar simulador", "calcular na simulação", "equações de llt", "física de verdade", "equações diferenciais")):
+        return {"intent": "single_simulation", "tool_name": "run_physics_simulation"}
+    if any(w in lower for w in ("surrogate", "predição rápida", "predicao rapida", "xgboost", "rede/modelo de ml", "metamodelo")):
+        return {"intent": "surrogate_prediction", "tool_name": "predict_surrogate"}
+    if any(w in lower for w in ("banco de dados", "planilhas", "histórico", "historico", "rodadas antigas", "campanhas do avl", "registros salvos")):
+        return {"intent": "database_query", "tool_name": "query_mdo_database"}
+    return {"intent": "documentation_rag", "tool_name": "search_technical_docs"}
+
+
+def test_agent_routing_and_hitl_safety(monkeypatch) -> None:
+    """Verify Agent tool routing accuracy, structured outputs, and Human-in-the-Loop gate via mocked CLI routers."""
     agent = AeroMDOCopilotAgent(db_path=DEFAULT_DB_PATH, model_dir=DEFAULT_MODEL_DIR)
-    metrics = evaluate_agent_suite(agent)
+    monkeypatch.setattr(agent, "_route_with_agy", _fake_cli_route)
+    metrics = evaluate_agent_suite(agent, provider="agy")
     assert metrics["intent_accuracy"] >= 0.95
     assert metrics["tool_selection_accuracy"] >= 0.95
     assert metrics["structured_output_validity_rate"] == 1.0
     assert metrics["hitl_gate_interception_rate"] == 1.0
+    assert metrics["held_out_conversational"]["intent_accuracy"] >= 0.95
 
 
-def test_fastapi_endpoints() -> None:
+def test_fastapi_endpoints(monkeypatch) -> None:
     """Test REST API endpoints (/health, /surrogate/predict, /rag/search, /agent/chat, /agent/approve)."""
+    from aeromdo.api import get_agent
+
+    monkeypatch.setattr(get_agent(), "_route_with_agy", _fake_cli_route)
     client = TestClient(app)
 
     r_health = client.get("/health")
@@ -101,3 +123,56 @@ def test_fastapi_endpoints() -> None:
     assert r_approve.status_code == 200
     assert r_approve.json()["ticket"]["status"] == "approved"
     assert r_approve.json()["result"]["physics_calls_reduction_pct"] > 50.0
+
+
+def test_cli_llm_providers_agy_and_codex(monkeypatch) -> None:
+    """Verify agent routing & parameter extraction for local `agy` (Gemini Pro) and `codex` (ChatGPT Pro) CLI providers."""
+    agent = AeroMDOCopilotAgent(db_path=DEFAULT_DB_PATH, model_dir=DEFAULT_MODEL_DIR)
+
+    monkeypatch.setattr(
+        agent,
+        "_route_with_agy",
+        lambda msg: {
+            "intent": "surrogate_prediction",
+            "tool_name": "predict_surrogate",
+            "architecture": "monoplane",
+            "b_asa": 2.30,
+            "cr_asa": 0.60,
+        },
+    )
+    monkeypatch.setattr(
+        agent,
+        "_route_with_codex",
+        lambda msg: {
+            "intent": "database_query",
+            "tool_name": "query_mdo_database",
+            "architecture": "biplane",
+            "solver": "AVL",
+            "order_by": "p_voo",
+        },
+    )
+
+    from aeromdo.schemas import AgentChatRequest
+
+    res_agy = agent.chat(AgentChatRequest(message="Estime com ML um monoplano", provider="agy"))
+    assert res_agy.provider_used == "agy"
+    assert res_agy.intent == "surrogate_prediction"
+    assert res_agy.tool_calls[0].tool_name == "predict_surrogate"
+    assert res_agy.structured_data["predicted_p_voo"] > 50.0
+
+    res_codex = agent.chat(AgentChatRequest(message="Mostre os biplanos no AVL", provider="codex"))
+    assert res_codex.provider_used == "codex"
+    assert res_codex.intent == "database_query"
+    assert res_codex.tool_calls[0].tool_name == "query_mdo_database"
+    assert res_codex.structured_data["matching_count"] > 0
+
+    import pytest
+    from pydantic import ValidationError
+
+    for removed_provider in ("local_router", "gemini", "auto", "ollama"):
+        with pytest.raises(ValidationError):
+            AgentChatRequest(message="Teste", provider=removed_provider)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(agent, "_route_with_agy", lambda msg: None)
+    with pytest.raises(RuntimeError):
+        agent.chat(AgentChatRequest(message="Teste falha CLI", provider="agy"))

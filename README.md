@@ -1,101 +1,169 @@
 # ✈️ AeroMDO Copilot
 
-**Physics-Informed Surrogate Modeling, Multi-Fidelity PSO, and Agentic RAG Copilot for Aircraft Multidisciplinary Design Optimization (SAE Brasil AeroDesign)**
+**Assistente de IA para Engenharia Aeronáutica — SAE AeroDesign**
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-REST%20API-009688.svg)](https://fastapi.tiangolo.com/)
-[![XGBoost](https://img.shields.io/badge/XGBoost-Surrogate%20ML-orange.svg)](https://xgboost.readthedocs.io/)
-[![Nix Flakes](https://img.shields.io/badge/Nix-Flake%20devShell-5277C3.svg)](https://nixos.org/)
+Aplicação web e API REST em Python/FastAPI para consultar simulações e documentação técnica, estimar desempenho com XGBoost e executar simulações e otimizações aeronáuticas. Os contratos de entrada e saída usam Pydantic.
 
-**AeroMDO Copilot** is an end-to-end **AI Software Engineering & Machine Learning Engineering** system built for aircraft conceptual and preliminary design optimization (SAE Brasil AeroDesign). It couples:
-1. **Octave-Validated Multidisciplinary Physics Simulator (`aeromdo.physics`)**: Python/NumPy port of the team's MATLAB simulator (`MDO__TRESIF_MONOPLANO.m`), implementing Lifting-Line Theory in free flight and ground effect (`LIFT_LINE.m`, `LIFT_LINE_SOLO.m`), Munk's Equivalent Monoplane Theorem (`MDO__MONOPLAS_EQ.m`), Sadraey parasite drag buildup (`CD0_COMPLETO.m`), nonlinear wing-tail downwash (`DOWNWASH.m`), longitudinal static stability (`AV_ESTAB.m`), component-buildup Empty Weight (`PV_AVIAO.m`), and time-stepped takeoff ground roll & rotation (`MDO__CORRIDA_AOC_OFICIAL.m`, $dt = 0.01\text{ s}$). Validated against **GNU Octave 11.3.0** with **$< 0.04\%$ relative error** on $MTOW$ and **$< 0.006\%$** on $PV, C_{L,\max}, C_{m0}, C_{m\alpha}, ME$.
-2. **Normalized MDO Data Pipeline (`aeromdo.data_pipeline`)**: Unifies **49,500** historical evaluations (**37,309** unique cleaned configurations across Monoplane/Biplane, **6,573** real 3D AVL Vortex-Lattice runs + **42,927** LLT runs, and PSO/Pattern Search optimizers) and indexes **76** raw section-and-requirement-tagged chunks directly from the 60-page *Relatório de Projeto Conceitual, Preliminar e Integração 2026* (zero synthetic chunks).
-3. **Leak-Free XGBoost Surrogate & Feasibility Ensemble (`aeromdo.surrogate`)**: Trained strictly on **16 raw geometric design inputs** (excluding derived constraint quantities `ar_asa`, `ar_sh`, `s_asa`, `s_sh`, `lht` to prevent feature leakage) and evaluated under three rigorous protocols: (a) Deduplicated 80/20 split, (b) 5-fold `GroupKFold` grouped by `source_file` (zero campaign leakage), and (c) the real AVL Vortex-Lattice subset (`solver == 'AVL'`).
-4. **Agentic Copilot with Hybrid RAG, Gemini 2.5 Flash Tool Calling & Human-in-the-Loop (`aeromdo.agent`, `aeromdo.rag`, `aeromdo.api`)**: FastAPI service and orchestrator with 5 specialized engineering tools, native Google Gemini 2.5 Flash structured JSON tool routing (`responseSchema`) + offline deterministic fallback router, mandatory page/requirement citations, calibrated out-of-scope abstention, and a Human-in-the-Loop approval gate for batch optimization jobs.
+O projeto reúne um simulador migrado de MATLAB para Python/NumPy, um pipeline de dados históricos, otimização por enxame de partículas (PSO) com surrogate e recuperação de documentação com citações. O agente atual usa os CLIs `agy` ou `codex` para selecionar ferramentas e extrair parâmetros; requer um desses CLIs instalado e autenticado.
 
----
+## Funcionalidades e arquitetura
 
-## 🏗️ System Architecture
+| Ferramenta do agente | Função |
+|---|---|
+| `query_mdo_database` | Consultar avaliações históricas em SQLite |
+| `predict_surrogate` | Estimar desempenho e viabilidade com XGBoost |
+| `run_physics_simulation` | Executar simulação física em Python/NumPy |
+| `run_multifidelity_pso` | Otimizar geometria usando surrogate e verificações físicas |
+| `search_technical_docs` | Recuperar trechos do relatório com página, seção e requisitos |
 
 ```mermaid
 flowchart LR
-    U["AeroDesign Engineer (Web UI / REST API)"] --> AG["AeroMDO Copilot Agent (Gemini 2.5 Flash / Local Router)"]
-    AG --> T1["query_mdo_database (SQLite: 49.5k evals)"]
-    AG --> T2["predict_surrogate (Leak-Free XGBoost Suite)"]
-    AG --> T3["run_physics_simulation (Octave-Validated LLT + Takeoff ODE)"]
-    AG --> HITL["Human-in-the-Loop Approval Gate"]
-    HITL --> T4["run_multifidelity_pso (Surrogate-Screened PSO)"]
-    AG --> T5["search_technical_docs (Hybrid RAG + Citations + Abstention)"]
+    U[Interface web / API REST] --> A[Agente: agy ou codex]
+    A --> DB[Consulta SQLite]
+    A --> ML[Predição XGBoost]
+    A --> SIM[Simulação física]
+    A --> RAG[Documentação com citações]
+    A --> H[Aprovação humana para lote]
+    H --> PSO[PSO multifidelidade]
 ```
 
----
+A aprovação humana é habilitada por padrão para otimizações em lote, com ticket pendente e execução por `POST /agent/approve/{ticket_id}`. Pode ser desativada pelo campo `require_human_approval_for_batch`. Simulações individuais e `POST /simulate` executam diretamente. Os tickets ficam em memória e não persistem após reiniciar o serviço. A API não implementa autenticação.
 
-## 📊 Experimental Results & Benchmarks
+## Resultados e metodologia
 
-All metrics below are reproducible via `python3 scripts/build_all.py` and verified by `pytest` (`artifacts/metrics_report.json`):
+Os números a seguir vêm do [relatório de métricas salvo](artifacts/metrics_report.json). Os resultados correspondem à execução registrada e ao protocolo descrito abaixo; os tempos variam conforme o ambiente. O código dos cálculos está em [surrogate.py](src/aeromdo/surrogate.py) e [evals.py](src/aeromdo/evals.py).
 
-### 1. Numerical Parity vs. Original MATLAB Code in GNU Octave 11.3.0
-| Output Variable | GNU Octave 11.3.0 (`MDO__TRESIF_MONOPLANO.m`) | Python Port (`aeromdo.physics`) | Relative Error |
-|---|---|---|---|
-| **MTOW ($\text{kg}$)** | `11.650391` | `11.646500` | **0.0334%** |
-| **Empty Weight $PV$ ($\text{kg}$)** | `2.890589` | `2.890600` | **0.0004%** |
-| **$C_{L,\max}$ (Free Flight)** | `1.589533` | `1.589500` | **0.0021%** |
-| **$C_{L,\max}$ (Ground Effect)** | `1.643721` | `1.643700` | **0.0013%** |
-| **Pitching Moment $C_{m0}$** | `0.072176` | `0.072180` | **0.0055%** |
-| **Pitch Stiffness $C_{m\alpha}$** | `-0.038022` | `-0.038020` | **0.0053%** |
-| **Static Margin ($ME$)** | `0.453498` | `0.453500` | **0.0004%** |
+### Base de simulações e modelo
 
-### 2. Aerodynamic Polar Surrogate Validation (Table 4.3 — Grouped by Unseen Wing Geometry ID)
-| Target Curve | $R^2$ (Measured) | Report Target $R^2$ | RMSE (Measured) | MAPE (Measured) | Report Target MAPE | Status |
-|---|---|---|---|---|---|---|
-| **Lift $C_L(\alpha)$** | **0.99952** | $> 0.992$ | **0.00926** | **0.597%** | $< 1.2\%$ | ✅ Passed |
-| **Drag $C_D(C_L)$** | **0.99985** | $> 0.985$ | **0.00071** | **0.373%** | $< 2.1\%$ | ✅ Passed |
+O pipeline consolidou **49.500 registros históricos**, dos quais **37.309 configurações únicas após limpeza**. Há 42.927 registros LLT e 6.573 AVL antes da limpeza. O split deduplicado usa 29.847 registros de treino e 7.462 de teste. O modelo recebe 16 variáveis geométricas brutas; variáveis derivadas de restrições são excluídas das entradas.
 
-### 3. MDO Surrogate Benchmark: Deduplicated Split, Real AVL Subset & 5-Fold `GroupKFold`
-Trained strictly on **16 raw geometric variables** (zero derived constraint leakage):
+O relatório também contém validação `GroupKFold` com cinco folds agrupados por arquivo de campanha e avaliação do subconjunto AVL. Essas avaliações têm resultados diferentes do split aleatório: por exemplo, o R² de MTOW cai de 0,8919 no split deduplicado para 0,5812 entre campanhas. Os resultados não devem ser interpretados como precisão uniforme em geometrias ou campanhas inéditas.
 
-| Target / Task | Poly Ridge (Deg 2) | Random Forest | **XGBoost (Deduplicated Split)** | **XGBoost (Real AVL Subset, $N=4,839$)** | **XGBoost (5-Fold `GroupKFold` by File)** |
-|---|---|---|---|---|---|
-| **Feasibility Classifier** | — | — | **AUC = $0.9898$, $F_1 = 0.9418$** | — | **AUC = $0.8661$ ($\text{Prec} = 0.8834$)** |
-| **Pitch Stiffness ($C_{m\alpha}$)** | — | — | **$R^2 = 0.9719$** | **$R^2 = 0.9399$** | **$R^2 = 0.8948$** |
-| **Pitching Moment ($C_{m0}$)** | — | — | **$R^2 = 0.9707$** | **$R^2 = 0.9588$** | **$R^2 = 0.7736$** |
-| **Static Margin ($ME$)** | — | — | **$R^2 = 0.9626$** | **$R^2 = 0.9387$** | **$R^2 = 0.8550$** |
-| **Max Lift ($C_{L,\max}$ Flight)** | $R^2 = 0.8599$ | $R^2 = 0.9276$ | **$R^2 = 0.9399$ (MAPE $0.62\%$)** | **$R^2 = 0.8954$ (MAPE $1.60\%$)** | **$R^2 = 0.6225$ (MAPE $1.89\%$)** |
-| **MTOW ($\text{kg}$)** | $R^2 = 0.8119$ | $R^2 = 0.8752$ | **$R^2 = 0.8919$ (MAPE $1.98\%$)** | **$R^2 = 0.8377$ (MAPE $3.64\%$)** | **$R^2 = 0.5812$ (MAPE $4.20\%$)** |
-| **Flight Score ($PVOO$)** | $R^2 = 0.9296$ | $R^2 = 0.9533$ | **$R^2 = 0.9594$ (MAPE $2.70\%$)** | — | Out-of-domain shift across Mono/Biplane files |
+### Aceleração de 4,44× e redução de 80% das chamadas físicas
 
-### 4. Multi-Seed PSO Benchmark (5 Random Seeds: `42, 101, 202, 303, 404`, 20 Particles × 10 Iterations)
-| Optimization Strategy | Physics Solver Calls / Run | Mean Wall-Clock Time | Mean Feasible $PVOO \pm \text{std}$ | vs. Full-Physics PSO |
-|---|---|---|---|---|
-| **Standard Full-Physics PSO (20×10)** | 200 | 36.55 s | **$156.29 \pm 0.55$** | Baseline (100.0%) |
-| **Multi-Fidelity Surrogate PSO (20×10, Top-4 Physics)** | **40 (-80.0%)** | **8.26 s (4.43x faster)** | **$153.05 \pm 1.15$** | **97.92% score retention** |
-| **Equal-Budget Full-Physics PSO (8×5, No Surrogate)** | 40 | 7.35 s | **$153.97 \pm 1.26$** | Statistically equivalent within $1\sigma$ |
+A função `run_multifidelity_pso_benchmark` compara **três estratégias, com cinco execuções por estratégia** (15 execuções ao todo), usando as sementes `42, 101, 202, 303, 404` e arquitetura monoplano.
 
-### 5. AI Engineering Evals (`pytest` Regression Suite)
-- **Honest Hybrid RAG Retrieval (`N = 25` technical questions over `76` raw PDF chunks + `6` out-of-scope queries)**:
-  - **Hybrid RAG Recall@5**: **96.0%** (24/25) vs. **92.0%** (23/25) on naive lexical overlap baseline.
-  - **Citation Formatting Compliance**: **96.0%** (`[Pág. X, Seção Y, REQ-*]`).
-  - **Out-of-Scope Abstention Accuracy**: **100.0%** (6/6 abstained with zero hallucinated citations).
-- **Agent Tool Calling & Safety (`N = 23` canonical cases + `N = 18` held-out conversational prompts)**:
-  - **Canonical Suite (`local_router`, 23 cases)**: **100.0%** tool selection accuracy, **100.0%** HITL interception rate.
-  - **Held-Out Conversational Suite (18 natural phrasing prompts not used in rule design)**:
-    - Deterministic `local_router` baseline: **38.89%** (7/18) tool selection accuracy.
-    - **Google `gemini-2.5-flash` Structured JSON Router**: **100.0% (18/18)** intent & tool selection accuracy, **100.0%** HITL interception rate, **100.0%** Pydantic schema validity (mean latency `~1.08 s`).
+| Estratégia | Configuração por execução | Chamadas físicas por execução | Tempo médio | PVOO médio ± desvio padrão |
+|---|---|---:|---:|---:|
+| PSO totalmente físico | 20 partículas × 10 iterações | 200 | 36,57557 s | 156,2942 ± 0,5482 |
+| PSO multifidelidade | 20 partículas × 10 iterações; top-4 verificados fisicamente por iteração | 40 | 8,23994 s | 153,0476 ± 1,1454 |
+| PSO físico com igual orçamento | 8 partículas × 5 iterações | 40 | 7,30597 s | 153,9673 ± 1,2552 |
 
----
+**Aceleração:** razão entre as médias de tempo das cinco sementes, e não média das razões individuais:
 
-## 🚀 Quickstart (100% Local & Reproducible with Nix)
+```text
+speedup = tempo_médio_PSO_físico / tempo_médio_PSO_multifidelidade
+        = 36575,57 ms / 8239,94 ms
+        = 4,4388… ≈ 4,44×
+```
+
+O tempo é medido com `time.perf_counter()` dentro do laço de otimização. Inclui inferência, simulações e correção online por Random Forest no método multifidelidade; exclui ingestão e treinamento inicial do XGBoost, carregamento do modelo e chamadas ao roteador LLM. O ganho é do método completo assistido por surrogate, não uma medição isolada de inferência do XGBoost. O artefato não registra hardware nem tempos individuais por semente, limitando a análise da variação temporal.
+
+**Redução das chamadas ao simulador físico:**
+
+```text
+PSO físico:          20 × 10 = 200 chamadas por execução
+PSO multifidelidade:  4 × 10 =  40 chamadas por execução
+redução = (200 − 40) / 200 × 100 = 80%
+```
+
+Nas cinco sementes, são 1.000 contra 200 chamadas físicas. O multifidelidade também avalia 200 candidatos pelo surrogate por execução; essas avaliações não entram na contagem de chamadas físicas.
+
+**Qualidade da solução:** o multifidelidade reteve `153,0476 / 156,2942 × 100 = 97,92%` do PVOO médio do PSO físico de 200 chamadas. O controle físico de igual orçamento foi mais rápido e teve PVOO médio cerca de 0,6% maior que o multifidelidade. Portanto, 4,44× se refere exclusivamente ao baseline de 200 chamadas, sem evidência de superioridade sobre o controle de 40 chamadas. Os desvios da tabela são populacionais (`numpy.std`, `ddof=0`), não intervalos de confiança nem teste de equivalência estatística.
+
+### Recall@5 de 96% e abstenção de 100%
+
+A avaliação usa **31 perguntas fixas**: **25 técnicas**, com páginas esperadas anotadas, e **6 fora de escopo**. O corpus contém **76 trechos extraídos do PDF do Relatório de Projeto Conceitual, Preliminar e Integração 2026**. As perguntas e os rótulos estão em `RAG_BENCHMARK_QUESTIONS` e `OUT_OF_SCOPE_QUESTIONS`, em [evals.py](src/aeromdo/evals.py).
+
+O recuperador combina similaridade TF-IDF de palavras (peso 0,65) e caracteres (0,35), com bônus para códigos de requisitos e referências a tabelas/seções. As respostas apresentam excertos e citações; essa avaliação não exige um LLM.
+
+**Critério de acerto:** para cada pergunta técnica, recuperar até cinco trechos e verificar se pelo menos uma página citada pertence ao conjunto de páginas esperado.
+
+```text
+Recall@5 reportado = perguntas com ao menos uma página esperada entre as citações / 25
+                  = 24 / 25 = 96%
+baseline lexical  = 23 / 25 = 92%
+```
+
+Embora o código nomeie a métrica `hybrid_rag_recall_at_5`, operacionalmente ela é uma **taxa de acerto por pergunta (Hit@5) por página**. Não mede a fração de todos os trechos relevantes recuperados nem a correção integral da resposta. Quando uma pergunta tem várias páginas esperadas, basta acertar uma delas. Uma abstenção em pergunta técnica conta como erro.
+
+**Abstenção:** uma pergunta fora de escopo só conta como sucesso quando a resposta tem `abstained=True` **e nenhuma citação**:
+
+```text
+abstenção fora de escopo = respostas abstidas sem citações / perguntas fora de escopo
+                        = 6 / 6 = 100%
+```
+
+O recuperador se abstém quando não há citações ou a maior pontuação é inferior ao limiar padrão `0.12`. As seis perguntas cobrem culinária, Kubernetes, futebol, investimentos e turismo. O resultado se limita a esse conjunto pequeno e fixo; não demonstra ausência geral de alucinações nem generalização para qualquer pergunta fora de escopo. Não há separação documentada entre perguntas usadas para calibrar o recuperador e perguntas finais de teste.
+
+A taxa de formatação de citações foi 24/25 = 96%; o teste verifica presença de citações, ausência de abstenção e o marcador `Pág.` no texto, não uma auditoria completa de fidelidade factual.
+
+### Paridade numérica MATLAB → Python
+
+O relatório registra **uma geometria de monoplano e dez grandezas comparadas** com referências atribuídas à execução do MATLAB original em GNU Octave 11.3.0. O erro relativo é `100 × abs(Python − referência) / abs(referência)`.
+
+| Grandeza | Referência Octave | Python registrado | Erro relativo registrado |
+|---|---:|---:|---:|
+| MTOW (kg) | 11,650391 | 11,646500 | 0,0334% |
+| Peso vazio (kg) | 2,890589 | 2,890600 | 0,0004% |
+| CL máximo em voo | 1,589533 | 1,589500 | 0,0021% |
+| CL máximo em solo | 1,643721 | 1,643700 | 0,0013% |
+| Cm0 | 0,072176 | 0,072180 | 0,0055% |
+| Cmα | −0,038022 | −0,038020 | 0,0053% |
+| Margem estática | 0,453498 | 0,453500 | 0,0004% |
+
+O maior erro registrado nas dez grandezas é inferior a 0,04%. O [teste de paridade](tests/test_physics.py) compara o simulador Python com constantes de referência, usando tolerâncias absolutas; não executa Octave nem impõe diretamente o limite relativo de 0,04%. O bloco de paridade em `build_all.py` é estático. Isso sustenta a comparação registrada para essa geometria, não uma campanha de validação de múltiplas geometrias.
+
+### Avaliação do agente e testes
+
+O conjunto de avaliação do agente contém **23 casos canônicos e 18 prompts conversacionais**. Os testes automatizados usam respostas simuladas dos CLIs para verificar a integração das ferramentas, os contratos de dados e o fluxo de aprovação humana, sem depender de serviços externos.
+
+A precisão de roteamento dos provedores atuais deve ser medida separadamente, com o CLI autenticado. As métricas de agente presentes no relatório salvo pertencem a uma versão anterior do roteador e não se aplicam à integração atual.
+
+O [workflow do GitHub Actions](.github/workflows/ci.yml) executa testes de física/paridade e testes independentes de API e comportamento do agente. A suíte completa inclui testes de RAG, modelos e integração que exigem o banco e os modelos gerados localmente; eles não rodam no CI público sem esses insumos.
+
+## Execução com Nix
 
 ```bash
-# Enter reproducible Nix development shell (or automatic via direnv)
 nix develop
 
-# Build SQLite database (~49.5k rows + 76 raw PDF chunks), train XGBoost models, and run benchmarks
-GEMINI_API_KEY="your_api_key_optional" python3 scripts/build_all.py
+# Testes independentes dos dados externos e de autenticação dos CLIs
+pytest tests/test_physics.py tests/test_api_contracts.py
 
-# Run unit tests (including Octave parity test) and AI regression evaluation suite
-pytest -v
-
-# Launch FastAPI server + interactive Web UI at http://127.0.0.1:8000
+# API, interface web em / e documentação interativa em /docs
 uvicorn aeromdo.api:app --reload
+```
+
+A interface abre em `http://127.0.0.1:8000`. Sem dados/modelos, a simulação física e os testes independentes funcionam; consultas históricas, RAG e predições exigem preparar os artefatos abaixo. O chat também exige `agy` ou `codex` disponível no PATH e autenticado. O flake fornece o ambiente Python, mas não instala nem autentica esses CLIs.
+
+### Dados necessários e reconstrução
+
+As planilhas, o PDF e o código MATLAB original não estão versionados neste repositório. O SQLite e o bundle treinado também são ignorados pelo Git. Para reconstruir as métricas, obtenha os insumos da equipe e configure o diretório de entrada:
+
+```text
+data/raw/
+├── TESTES_MDO/*.xlsx
+├── individuos.xlsx
+└── Relatorio_de_Projeto_Conceitual_Preliminar_e_Integracao_2026.pdf
+```
+
+```bash
+# Dentro de nix develop; o diretório padrão é data/raw
+export AEROMDO_RAW_DIR="/caminho/para/os/insumos"
+export AEROMDO_LLM_PROVIDER=agy  # ou codex, instalado e autenticado
+python3 scripts/build_all.py
+pytest -v
+```
+
+O build ingere os dados, treina os modelos, executa as 15 otimizações e avalia RAG e agente. Ele sobrescreve `artifacts/metrics_report.json`; preserve o relatório histórico se precisar comparar execuções. Os tempos podem mudar. A paridade Octave continua sendo uma referência estática, não é recalculada pelo build.
+
+Para repetir apenas a avaliação RAG após gerar o banco:
+
+```bash
+python3 - <<'PY'
+import json
+from aeromdo.evals import evaluate_rag_suite
+from aeromdo.rag import AeroRAGIndex
+print(json.dumps(evaluate_rag_suite(AeroRAGIndex(), top_k=5), indent=2))
+PY
 ```

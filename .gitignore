@@ -11,3 +11,6 @@ build/
 .env
 data/*.db
 artifacts/models/*.pkl
+
+# External team source data (not distributed with the repository)
+data/raw/
